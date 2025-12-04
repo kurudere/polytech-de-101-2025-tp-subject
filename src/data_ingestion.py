@@ -3,6 +3,23 @@ from datetime import datetime
 
 import requests
 
+
+def get_nantes_realtime_bicycle_data():
+    
+    url = "https://data.nantesmetropole.fr/api/explore/v2.1/catalog/datasets/244400404_stations-velos-libre-service-nantes-metropole-disponibilites/records?limit=20"
+    
+    response = requests.request("GET", url)
+    
+    serialize_data(response.text, "nantes_realtime_bicycle_data.json")
+
+
+def get_toulouse_realtime_bicycle_data():
+    
+    url = ""
+    
+    response = requests.request("GET", url)
+
+
 def get_paris_realtime_bicycle_data():
     
     url = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/exports/json"
@@ -10,6 +27,13 @@ def get_paris_realtime_bicycle_data():
     response = requests.request("GET", url)
     
     serialize_data(response.text, "paris_realtime_bicycle_data.json")
+
+def get_french_cities_data():
+    url = "https://geo.api.gouv.fr/communes"
+    response = requests.get(url)
+
+    serialize_data(response.text, "french_cities_data.json")
+
 
 def serialize_data(raw_json: str, file_name: str):
 

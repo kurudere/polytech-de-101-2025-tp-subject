@@ -1,124 +1,182 @@
-import json
-from datetime import datetime, date
+"""
+Module: data_consolidation.py
+Responsabilité :
+    - Standardisation des données ingérées dans des tables consolidées
+    - Tables créées :
+        * CONSOLIDATE_CITY
+        * CONSOLIDATE_STATION
+        * CONSOLIDATE_STATION_STATEMENT
+"""
 
 import duckdb
 import pandas as pd
+import json
+from datetime import date
 
-today_date = datetime.now().strftime("%Y-%m-%d")
+
+# ---------------------------------------------------------
+# Création des tables consolidées (schéma global du TP)
+# ---------------------------------------------------------
 
 def create_consolidate_tables():
-    con = duckdb.connect(database = "data/duckdb/mobility_analysis.duckdb", read_only = False)
+    """
+    Crée les tables CONSOLIDATE_* si elles n'existent pas encore.
+    """
+    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
     with open("data/sql_statements/create_consolidate_tables.sql") as fd:
-        statements = fd.read()
-        for statement in statements.split(";"):
-            print(statement)
-            con.execute(statement)
+        sql = fd.read()
 
-def consolidate_city_paris_data():
+    for stmt in sql.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            print(f"[SQL CONSOLIDATION]\n{stmt}")
+            con.execute(stmt)
+
+
+# ---------------------------------------------------------
+# CONSOLIDATION DES VILLES (INSEE)
+# ---------------------------------------------------------
+
+def consolidate_city_data():
+    """
+    Consolidation de TOUTES les villes de France via INSEE.
+    Remplit CONSOLIDATE_CITY avec :
+        ID (code INSEE), NAME, NB_INHABITANTS, CREATED_DATE
+    """
     con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
 
-    # Chargement des données brutes
-    with open(f"data/raw_data/{today_date}/paris_realtime_bicycle_data.json") as fd:
-        data = json.load(fd)
+    today = date.today()
+    with open(f"data/raw_data/{today}/french_cities_data.json") as fd:
+        raw = json.load(fd)
 
-    raw_data_df = pd.json_normalize(data)
+    df = pd.json_normalize(raw)
 
-    # Création de la colonne nb_inhabitants vide
-    raw_data_df["nb_inhabitants"] = None
+    df = df.rename(columns={
+        "code": "ID",
+        "nom": "NAME",
+        "population": "NB_INHABITANTS"
+    })
 
-    # Sélection et renommage des colonnes de base
-    city_data_df = raw_data_df[[
-        "code_insee_commune",
-        "nom_arrondissement_communes",
-        "nb_inhabitants"
-    ]].copy()
+    df["CREATED_DATE"] = today
 
-    city_data_df.rename(columns={
-        "code_insee_commune": "id",
-        "nom_arrondissement_communes": "name"
-    }, inplace=True)
+    con.register("city_df", df[["ID", "NAME", "NB_INHABITANTS", "CREATED_DATE"]])
+    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_CITY SELECT * FROM city_df;")
 
-    city_data_df.drop_duplicates(inplace=True)
-    city_data_df["created_date"] = date.today()
+    print(f"[CONSOLIDATION] {len(df)} villes consolidées.")
 
-    # Chargement des données INSEE
-    with open(f"data/raw_data/{today_date}/french_cities_data.json") as fd:
-        cities_raw = json.load(fd)
 
-    if cities_raw:
-        insee_df = pd.json_normalize(cities_raw)
-
-        # Normalisation INSEE
-        insee_df = insee_df[["code", "nom", "population"]].copy()
-        insee_df.rename(columns={
-            "code": "id",
-            "nom": "official_name",
-            "population": "nb_inhabitants"
-        }, inplace=True)
-
-        # Supprime la colonne nb_inhabitants temporaire pour éviter conflit
-        city_data_df = city_data_df.drop(columns=["nb_inhabitants"], errors="ignore")
-
-        # Merge avec les données INSEE
-        city_data_df = city_data_df.merge(
-            insee_df[["id", "nb_inhabitants"]],
-            on="id",
-            how="left"
-        )
-
-    # Supprime colonne official_name si elle existe
-    city_data_df = city_data_df.drop(columns=["official_name"], errors="ignore")
-
-    # Sélection finale du schéma
-    city_data_df = city_data_df[["id", "name", "nb_inhabitants", "created_date"]]
-
-    # Enregistrement dans DuckDB
-    con.register("city_data_df", city_data_df)
-    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_CITY SELECT * FROM city_data_df;")
+# ---------------------------------------------------------
+# CONSOLIDATION PARIS
+# ---------------------------------------------------------
 
 def consolidate_station_paris_data():
-    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
+    """
+    Consolidation des stations Paris.
+    Source : open data Paris → tableau JSON simple.
+    """
+    con = duckdb.connect("data/duckdb/mobility_analysis.duckdb", read_only=False)
 
-    with open(f"data/raw_data/{today_date}/paris_realtime_bicycle_data.json") as fd:
-        data = json.load(fd)
+    today = date.today()
+    with open(f"data/raw_data/{today}/paris_realtime_bicycle_data.json") as fd:
+        raw = json.load(fd)
 
-    raw_data_df = pd.json_normalize(data)
+    df = pd.DataFrame(raw)
 
-    station_data_df = pd.DataFrame({
-        "id": raw_data_df["stationcode"],
-        "code": raw_data_df["stationcode"],
-        "name": raw_data_df["name"],
-        "city_name": raw_data_df["nom_arrondissement_communes"],
-        "city_code": raw_data_df["code_insee_commune"],
+    station_df = pd.DataFrame({
+        "id": df["stationcode"].astype(str),
+        "code": df["stationcode"].astype(str),
+        "name": df["name"],
+        "city_name": df["nom_arrondissement_communes"],
+        "city_code": df["code_insee_commune"],
         "address": None,
-        "longitude": raw_data_df["coordonnees_geo.lon"],
-        "latitude": raw_data_df["coordonnees_geo.lat"],
-        "status": raw_data_df["is_renting"],
-        "created_date": date.today(),
-        "capacity": raw_data_df["capacity"]
+        "longitude": df["coordonnees_geo"].apply(lambda x: x["lon"]),
+        "latitude": df["coordonnees_geo"].apply(lambda x: x["lat"]),
+        "status": df["is_renting"].apply(lambda x: "OPEN" if x == "OUI" else "CLOSED"),
+        "created_date": today,
+        "capacity": df["capacity"]
     })
 
-    con.register("station_data_df", station_data_df)
-    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_STATION SELECT * FROM station_data_df;")
-    con.close()
+    con.register("paris_station_df", station_df)
+    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_STATION SELECT * FROM paris_station_df;")
+
 
 def consolidate_station_statement_paris_data():
-    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
+    """
+    Consolidation des disponibilités Paris.
+    """
+    con = duckdb.connect("data/duckdb/mobility_analysis.duckdb", read_only=False)
 
-    with open(f"data/raw_data/{today_date}/paris_realtime_bicycle_data.json") as fd:
-        data = json.load(fd)
+    today = date.today()
+    with open(f"data/raw_data/{today}/paris_realtime_bicycle_data.json") as fd:
+        raw = json.load(fd)
 
-    raw_data_df = pd.json_normalize(data)
+    df = pd.DataFrame(raw)
 
-    statement_data_df = pd.DataFrame({
-        "station_id": raw_data_df["stationcode"],
-        "bicycle_docks_available": raw_data_df["numdocksavailable"],
-        "bicycle_available": raw_data_df["numbikesavailable"],
-        "last_statement_date": pd.to_datetime(raw_data_df["duedate"]),
-        "created_date": date.today()
+    statement_df = pd.DataFrame({
+        "station_id": df["stationcode"].astype(str),
+        "bicycle_docks_available": df["numdocksavailable"],
+        "bicycle_available": df["numbikesavailable"],
+        "last_statement_date": today,
+        "created_date": today
     })
 
-    con.register("statement_data_df", statement_data_df)
+    con.register("paris_statement_df", statement_df)
+    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_STATION_STATEMENT SELECT * FROM paris_statement_df;")
 
-    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_STATION_STATEMENT SELECT * FROM statement_data_df;")
-    con.close()
+
+# ---------------------------------------------------------
+# CONSOLIDATION NANTES
+# ---------------------------------------------------------
+
+def consolidate_station_nantes_data():
+    """
+    Consolidation des stations Nantes (format JCDecaux).
+    """
+    con = duckdb.connect("data/duckdb/mobility_analysis.duckdb", read_only=False)
+    today = date.today()
+
+    with open(f"data/raw_data/{today}/nantes_realtime_bicycle_data.json") as fd:
+        raw = json.load(fd)
+
+    df = pd.json_normalize(raw["results"])
+
+    station_df = pd.DataFrame({
+        "id": df["number"].astype(str),
+        "code": df["number"].astype(str),
+        "name": df["name"],
+        "city_name": "Nantes",
+        "city_code": "44109",
+        "address": df["address"],
+        "longitude": df["position.lon"],
+        "latitude": df["position.lat"],
+        "status": "OPEN",
+        "created_date": today,
+        "capacity": df["bike_stands"]
+    })
+
+    con.register("nantes_station_df", station_df)
+    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_STATION SELECT * FROM nantes_station_df;")
+
+
+def consolidate_station_statement_nantes_data():
+    """
+    Consolidation des disponibilités Nantes.
+    """
+    con = duckdb.connect("data/duckdb/mobility_analysis.duckdb", read_only=False)
+    today = date.today()
+
+    with open(f"data/raw_data/{today}/nantes_realtime_bicycle_data.json") as fd:
+        raw = json.load(fd)
+
+    df = pd.json_normalize(raw["results"])
+
+    statement_df = pd.DataFrame({
+        "station_id": df["number"].astype(str),
+        "bicycle_docks_available": df["available_bike_stands"],
+        "bicycle_available": df["available_bikes"],
+        "last_statement_date": pd.to_datetime(df["last_update"]),
+        "created_date": today
+    })
+
+    con.register("nantes_statement_df", statement_df)
+    con.execute("INSERT OR REPLACE INTO CONSOLIDATE_STATION_STATEMENT SELECT * FROM nantes_statement_df;")

@@ -30,30 +30,15 @@ def agregate_dim_city():
 
     con.execute(sql_statement)
 
-
 def agregate_dim_station():
-    """
-    Mise à jour de la dimension station (DIM_STATION).
-    """
-    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
-
+    con = duckdb.connect(database = "data/duckdb/mobility_analysis.duckdb", read_only = False)
+    
     sql_statement = """
-    INSERT OR REPLACE INTO DIM_STATION (
-        ID,
-        NAME,
-        CITY_NAME,
-        CITY_CODE,
-        ADDRESS,
-        LONGITUDE,
-        LATITUDE,
-        STATUS,
-        CAPACITY
-    )
+    INSERT OR REPLACE INTO DIM_STATION
     SELECT 
         ID,
+        CODE,
         NAME,
-        CITY_NAME,
-        CITY_CODE,
         ADDRESS,
         LONGITUDE,
         LATITUDE,
@@ -64,4 +49,5 @@ def agregate_dim_station():
     """
 
     con.execute(sql_statement)
+
 

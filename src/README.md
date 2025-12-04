@@ -35,6 +35,8 @@ sur l'état du réseau vélo (stations, disponibilités, villes…).
 
 # 🏗 Architecture du projet
 
+```text
+
 project/
 │
 ├── data/
@@ -49,7 +51,7 @@ project/
 │ └── main.py # Pipeline ETL complet
 │
 └── README.md
-
+```
 
 ---
 

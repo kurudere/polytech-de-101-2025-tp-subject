@@ -1,20 +1,25 @@
 import duckdb
 
-
 def create_agregate_tables():
-    con = duckdb.connect(database = "data/duckdb/mobility_analysis.duckdb", read_only = False)
+    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
+    
     with open("data/sql_statements/create_agregate_tables.sql") as fd:
         statements = fd.read()
         for statement in statements.split(";"):
-            print(statement)
-            con.execute(statement)
+            stmt = statement.strip()
+            if stmt:  # éviter d'exécuter des lignes vides
+                print(stmt)
+                con.execute(stmt)
 
 
 def agregate_dim_city():
-    con = duckdb.connect(database = "data/duckdb/mobility_analysis.duckdb", read_only = False)
-    
+    """
+    Mise à jour de la dimension ville (DIM_CITY).
+    """
+    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
+
     sql_statement = """
-    INSERT OR REPLACE INTO DIM_CITY
+    INSERT OR REPLACE INTO DIM_CITY (ID, NAME, NB_INHABITANTS)
     SELECT 
         ID,
         NAME,
@@ -25,11 +30,25 @@ def agregate_dim_city():
 
     con.execute(sql_statement)
 
+
 def agregate_dim_station():
-    con = duckdb.connect(database = "data/duckdb/mobility_analysis.duckdb", read_only = False)
-    
+    """
+    Mise à jour de la dimension station (DIM_STATION).
+    """
+    con = duckdb.connect(database="data/duckdb/mobility_analysis.duckdb", read_only=False)
+
     sql_statement = """
-    INSERT OR REPLACE INTO DIM_CITY
+    INSERT OR REPLACE INTO DIM_STATION (
+        ID,
+        NAME,
+        CITY_NAME,
+        CITY_CODE,
+        ADDRESS,
+        LONGITUDE,
+        LATITUDE,
+        STATUS,
+        CAPACITY
+    )
     SELECT 
         ID,
         NAME,

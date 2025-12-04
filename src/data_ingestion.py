@@ -32,7 +32,7 @@ def get_french_cities_data():
     url = "https://geo.api.gouv.fr/communes"
     response = requests.get(url)
 
-    serialize_data(response.text, "french_cities.json")
+    serialize_data(response.text, "french_cities_data.json")
 
 
 def serialize_data(raw_json: str, file_name: str):
